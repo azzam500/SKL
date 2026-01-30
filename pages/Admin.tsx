@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../contexts/AppContext';
-import { Upload, Save, Settings, Users, LogOut, CheckCircle, Loader2, AlertTriangle, AlertCircle, FileSpreadsheet, Download, XCircle, Search, List, ArrowUpDown, Filter } from 'lucide-react';
+import { Upload, Save, Settings, Users, LogOut, CheckCircle, Loader2, AlertTriangle, AlertCircle, FileSpreadsheet, Download, XCircle, Search, List, ArrowUpDown, Filter, Plus, Edit2, Trash2, X, PlusCircle, MinusCircle } from 'lucide-react';
 import { Student, SubjectGrade } from '../types';
 import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../services/firebase';
+import { auth, db } from '../services/firebase';
+import { doc, deleteDoc, setDoc } from 'firebase/firestore';
 import Papa from 'papaparse';
 
 const Admin: React.FC = () => {
@@ -35,29 +36,66 @@ const Admin: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [sortConfig, setSortConfig] = useState<{ key: keyof Student; direction: 'asc' | 'desc' } | null>(null);
 
+  // Student Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const initialStudentState: Student = {
+    id: '',
+    nisn: '',
+    examNumber: '',
+    name: '',
+    className: '',
+    status: 'LULUS',
+    birthPlace: '',
+    birthDate: '',
+    grades: [
+      { name: 'Pendidikan Agama', score: 0 },
+      { name: 'Matematika', score: 0 },
+      { name: 'Bahasa Indonesia', score: 0 },
+    ]
+  };
+  const [studentForm, setStudentForm] = useState<Student>(initialStudentState);
+
   // Local state for demo/bypass auth
   const [demoAuth, setDemoAuth] = useState(false);
 
   const navigate = useNavigate();
 
+  const fetchStudentsList = async () => {
+    setIsFetchingList(true);
+    try {
+      const data = await getAllStudents();
+      setStudentList(data);
+    } catch (error) {
+      console.error("Failed to fetch students", error);
+      setMessage({ type: 'error', text: 'Gagal mengambil data siswa.' });
+    } finally {
+      setIsFetchingList(false);
+    }
+  };
+
   // Fetch student list when tab is active
   useEffect(() => {
     if (activeTab === 'list' && isAuthenticated) {
-      const fetchList = async () => {
-        setIsFetchingList(true);
-        try {
-          const data = await getAllStudents();
-          setStudentList(data);
-        } catch (error) {
-          console.error("Failed to fetch students", error);
-          setMessage({ type: 'error', text: 'Gagal mengambil data siswa.' });
-        } finally {
-          setIsFetchingList(false);
-        }
-      };
-      fetchList();
+      fetchStudentsList();
     }
   }, [activeTab]);
+
+  // Helper to convert ISO string (UTC) to local datetime-local format (YYYY-MM-DDTHH:mm)
+  const toLocalISOString = (isoString: string) => {
+    if (!isoString) return '';
+    const date = new Date(isoString);
+    // Get the timezone offset in minutes and convert to milliseconds
+    const offset = date.getTimezoneOffset() * 60000;
+    // Adjust the date to local time by subtracting the offset
+    // Note: getTimezoneOffset returns positive minutes for zones behind UTC (e.g., UTC-5 is 300)
+    // and negative for zones ahead (e.g., UTC+7 is -420).
+    // So date.getTime() - offset gives the milliseconds that correspond to the local time value in UTC representation.
+    const localDate = new Date(date.getTime() - offset);
+    // Return the ISO string slice for datetime-local
+    return localDate.toISOString().slice(0, 16);
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,7 +126,34 @@ const Admin: React.FC = () => {
       }
 
       console.error("Login Error:", error);
-      setMessage({ type: 'error', text: 'Login gagal. Periksa email dan password.' });
+      
+      let errorMessage = 'Login gagal. Periksa email dan password.';
+      
+      switch (error.code) {
+        case 'auth/invalid-email':
+          errorMessage = 'Format email tidak valid.';
+          break;
+        case 'auth/user-disabled':
+          errorMessage = 'Akun ini telah dinonaktifkan.';
+          break;
+        case 'auth/user-not-found':
+          errorMessage = 'Email tidak terdaftar.';
+          break;
+        case 'auth/wrong-password':
+          errorMessage = 'Password salah.';
+          break;
+        case 'auth/invalid-credential':
+          errorMessage = 'Email atau password salah.';
+          break;
+        case 'auth/too-many-requests':
+          errorMessage = 'Terlalu banyak percobaan. Silakan coba lagi nanti.';
+          break;
+        case 'auth/network-request-failed':
+          errorMessage = 'Gagal terhubung. Periksa koneksi internet Anda.';
+          break;
+      }
+
+      setMessage({ type: 'error', text: errorMessage });
     } finally {
       setIsLoading(false);
     }
@@ -124,6 +189,93 @@ const Admin: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // --- STUDENT CRUD OPERATIONS ---
+
+  const handleOpenAddModal = () => {
+    setStudentForm(initialStudentState);
+    setValidationError(null);
+    setIsEditing(false);
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (student: Student) => {
+    setStudentForm(JSON.parse(JSON.stringify(student))); // Deep copy
+    setValidationError(null);
+    setIsEditing(true);
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteStudent = async (student: Student) => {
+    if(!window.confirm(`Yakin ingin menghapus siswa ${student.name}?`)) return;
+
+    setIsLoading(true);
+    try {
+      if (!isDemoMode) {
+           await deleteDoc(doc(db, 'students', student.id));
+      } else {
+           console.warn("Demo Mode: Delete simulated");
+      }
+      
+      setMessage({ type: 'success', text: `Siswa ${student.name} berhasil dihapus.` });
+      await fetchStudentsList();
+    } catch (e: any) {
+      console.error(e);
+      setMessage({ type: 'error', text: 'Gagal menghapus data: ' + e.message });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSaveStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setValidationError(null);
+    
+    try {
+        if (!studentForm.nisn || !studentForm.name) {
+            throw new Error("NISN dan Nama wajib diisi");
+        }
+
+        const studentId = studentForm.nisn; // Use NISN as ID
+        const studentData = { ...studentForm, id: studentId };
+
+        if (!isDemoMode) {
+             await setDoc(doc(db, 'students', studentId), studentData);
+        }
+        
+        setMessage({ type: 'success', text: isEditing ? 'Data siswa diperbarui!' : 'Siswa baru ditambahkan!' });
+        setIsModalOpen(false);
+        await fetchStudentsList();
+    } catch (error: any) {
+        console.error(error);
+        setMessage({ type: 'error', text: 'Gagal menyimpan data: ' + error.message });
+    } finally {
+        setIsLoading(false);
+    }
+  };
+
+  const handleFormChange = (field: keyof Student, value: any) => {
+    setStudentForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleGradeChange = (index: number, field: keyof SubjectGrade, value: any) => {
+    const newGrades = [...studentForm.grades];
+    newGrades[index] = { ...newGrades[index], [field]: value };
+    setStudentForm(prev => ({ ...prev, grades: newGrades }));
+  };
+
+  const addSubject = () => {
+    setStudentForm(prev => ({
+        ...prev,
+        grades: [...prev.grades, { name: '', score: 0 }]
+    }));
+  };
+
+  const removeSubject = (index: number) => {
+    const newGrades = studentForm.grades.filter((_, i) => i !== index);
+    setStudentForm(prev => ({ ...prev, grades: newGrades }));
   };
 
   // --- CSV UPLOAD LOGIC ---
@@ -375,56 +527,89 @@ const Admin: React.FC = () => {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-[80vh] flex items-center justify-center bg-gray-100 px-4">
-        <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full">
-          <h2 className="text-2xl font-bold text-center text-sman-blue mb-6">Admin Login</h2>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-12">
+        <div className="bg-white p-8 md:p-10 rounded-2xl shadow-xl max-w-md w-full border border-gray-100 transform transition-all hover:shadow-2xl">
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4 text-sman-blue shadow-inner">
+               <Users className="w-8 h-8" />
+            </div>
+            <h2 className="text-3xl font-bold text-gray-900 tracking-tight">Admin Portal</h2>
+            <p className="text-gray-500 mt-2 text-sm">Masuk untuk mengelola data kelulusan</p>
+          </div>
           
-          <div className="mb-4 p-3 bg-blue-50 text-blue-800 text-sm rounded-lg flex gap-2 items-start border border-blue-200">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <div className="mb-6 p-4 bg-blue-50 text-blue-800 text-sm rounded-xl flex gap-3 items-start border border-blue-100">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
             <div>
-              <strong>Informasi Login:</strong>
-              <br />Password default: <code>admin123</code>
+              <strong className="font-semibold">Informasi Login:</strong>
+              <div className="mt-1 opacity-90">Password default: <code className="bg-blue-100 px-1.5 py-0.5 rounded text-blue-900 font-mono font-bold">admin123</code></div>
             </div>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input
-                type="email"
-                required
-                className="w-full border p-2 rounded focus:ring-2 focus:ring-sman-blue outline-none bg-white text-gray-900"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@sman1padangan.sch.id"
-              />
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
+              <div className="relative group">
+                <input
+                  type="email"
+                  required
+                  className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-sman-blue focus:ring-4 focus:ring-sman-blue/10 outline-none transition-all duration-200 bg-gray-50 focus:bg-white text-gray-900 placeholder-gray-400"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="admin@sman1padangan.sch.id"
+                />
+              </div>
             </div>
+            
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input
-                type="password"
-                required
-                className="w-full border p-2 rounded focus:ring-2 focus:ring-sman-blue outline-none bg-white text-gray-900"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+              <div className="flex justify-between items-center mb-2">
+                <label className="block text-sm font-semibold text-gray-700">Password</label>
+                <a href="#" onClick={(e) => e.preventDefault()} className="text-xs font-medium text-sman-blue hover:text-blue-800 transition-colors">
+                  Lupa Password?
+                </a>
+              </div>
+              <div className="relative group">
+                <input
+                  type="password"
+                  required
+                  className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-sman-blue focus:ring-4 focus:ring-sman-blue/10 outline-none transition-all duration-200 bg-gray-50 focus:bg-white text-gray-900 placeholder-gray-400"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                />
+              </div>
             </div>
+
             {message && message.type === 'error' && (
-                <div className="bg-red-50 text-red-600 p-3 rounded text-sm flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4"/>
-                    {message.text}
+                <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-xl text-sm flex items-center gap-3 animate-pulse">
+                    <AlertTriangle className="w-5 h-5 flex-shrink-0"/>
+                    <span className="font-medium">{message.text}</span>
                 </div>
             )}
+            
             <button 
                 type="submit"
                 disabled={isLoading} 
-                className="w-full bg-sman-blue text-white py-2 rounded hover:bg-blue-800 transition flex justify-center items-center"
+                className="w-full bg-gradient-to-r from-sman-blue to-blue-800 hover:from-blue-800 hover:to-blue-900 text-white font-bold py-3.5 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 transform hover:-translate-y-0.5 active:scale-[0.98] flex justify-center items-center gap-2"
             >
-              {isLoading ? <Loader2 className="animate-spin w-5 h-5"/> : "Masuk"}
+              {isLoading ? (
+                <>
+                  <Loader2 className="animate-spin w-5 h-5"/>
+                  <span className="opacity-90">Memproses...</span>
+                </>
+              ) : (
+                "Masuk ke Dashboard"
+              )}
             </button>
-            <button type="button" onClick={() => navigate('/')} className="w-full text-gray-500 text-sm hover:underline text-center">
-                Kembali ke Beranda
-            </button>
+            
+            <div className="pt-2 text-center">
+              <button 
+                type="button" 
+                onClick={() => navigate('/')} 
+                className="text-gray-500 text-sm hover:text-sman-blue transition-colors font-medium flex items-center justify-center gap-2 mx-auto group"
+              >
+                <span className="group-hover:-translate-x-1 transition-transform">←</span> Kembali ke Beranda
+              </button>
+            </div>
           </form>
         </div>
       </div>
@@ -489,9 +674,13 @@ const Admin: React.FC = () => {
                   <input
                     type="datetime-local"
                     className="w-full border p-2 rounded bg-white text-gray-900 focus:ring-2 focus:ring-sman-blue outline-none"
-                    // Simple conversion for datetime-local input compatibility
-                    value={new Date(tempSettings.releaseDate).toISOString().slice(0, 16)}
-                    onChange={(e) => setTempSettings({...tempSettings, releaseDate: new Date(e.target.value).toISOString()})}
+                    // Use helper to display local time (YYYY-MM-DDTHH:mm) correctly in 24h format
+                    value={toLocalISOString(tempSettings.releaseDate)}
+                    onChange={(e) => {
+                      if (!e.target.value) return;
+                      // Convert local time back to ISO string (UTC)
+                      setTempSettings({...tempSettings, releaseDate: new Date(e.target.value).toISOString()})
+                    }}
                   />
                   <p className="text-xs text-gray-500 mt-1">Siswa tidak dapat melihat hasil sebelum waktu ini.</p>
                 </div>
@@ -536,7 +725,8 @@ const Admin: React.FC = () => {
                 </button>
               </div>
             )}
-
+            
+            {/* Rest of the component ... */}
             {/* TAB: UPLOAD */}
             {activeTab === 'upload' && (
               <div className="space-y-8">
@@ -659,8 +849,19 @@ const Admin: React.FC = () => {
             {activeTab === 'list' && (
               <div className="space-y-4">
                  <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-6">
+                    {/* Add Button */}
+                    <div className="order-2 md:order-3">
+                         <button 
+                             onClick={handleOpenAddModal}
+                             className="bg-sman-blue hover:bg-blue-800 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors shadow-sm"
+                         >
+                             <Plus className="w-4 h-4" />
+                             Tambah Siswa
+                         </button>
+                    </div>
+
                     {/* Search */}
-                    <div className="relative w-full md:w-1/3">
+                    <div className="relative w-full md:w-1/3 order-1 md:order-1">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
                       <input 
                         type="text" 
@@ -672,7 +873,7 @@ const Admin: React.FC = () => {
                     </div>
                     
                     {/* Filter Status */}
-                    <div className="flex items-center gap-2 w-full md:w-auto">
+                    <div className="flex items-center gap-2 w-full md:w-auto order-3 md:order-2">
                       <Filter className="text-gray-500 w-4 h-4" />
                       <select 
                         className="border p-2 rounded-lg text-sm bg-white text-gray-900 outline-none focus:ring-2 focus:ring-sman-blue"
@@ -685,10 +886,10 @@ const Admin: React.FC = () => {
                         <option value="DITUNDA">Ditunda</option>
                       </select>
                     </div>
+                 </div>
 
-                    <div className="text-sm text-gray-500">
+                 <div className="mb-2 text-sm text-gray-500">
                       Total: {processedStudents.length} Siswa
-                    </div>
                  </div>
 
                  {isFetchingList ? (
@@ -721,6 +922,7 @@ const Admin: React.FC = () => {
                                 <div className="flex items-center gap-1">Status <ArrowUpDown className="w-3 h-3" /></div>
                               </th>
                               <th className="px-4 py-3 text-right">Rata-rata Nilai</th>
+                              <th className="px-4 py-3 text-center">Aksi</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-200">
@@ -741,12 +943,30 @@ const Admin: React.FC = () => {
                                       </span>
                                     </td>
                                     <td className="px-4 py-3 text-right font-mono">{avgScore}</td>
+                                    <td className="px-4 py-3 text-center">
+                                      <div className="flex justify-center gap-2">
+                                        <button 
+                                          onClick={() => handleOpenEditModal(student)}
+                                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                                          title="Edit"
+                                        >
+                                          <Edit2 className="w-4 h-4" />
+                                        </button>
+                                        <button 
+                                          onClick={() => handleDeleteStudent(student)}
+                                          className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                                          title="Hapus"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    </td>
                                   </tr>
                                 );
                               })
                             ) : (
                               <tr>
-                                <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                                   Tidak ada data siswa yang ditemukan.
                                 </td>
                               </tr>
@@ -761,6 +981,199 @@ const Admin: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* STUDENT FORM MODAL */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                <div className="p-6 border-b flex justify-between items-center sticky top-0 bg-white z-10">
+                    <h3 className="text-xl font-bold text-gray-800">
+                        {isEditing ? 'Edit Data Siswa' : 'Tambah Siswa Baru'}
+                    </h3>
+                    <button 
+                        onClick={() => setIsModalOpen(false)}
+                        className="text-gray-400 hover:text-gray-600"
+                    >
+                        <X className="w-6 h-6" />
+                    </button>
+                </div>
+                
+                <form onSubmit={handleSaveStudent} className="p-6 space-y-6">
+                    {/* Identity Section */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">NISN (Wajib)</label>
+                            <input 
+                                type="text"
+                                required 
+                                className="w-full border border-gray-600 p-2 rounded focus:ring-2 focus:ring-sman-blue outline-none bg-gray-700 text-white placeholder-gray-400"
+                                value={studentForm.nisn}
+                                onChange={(e) => handleFormChange('nisn', e.target.value)}
+                                // Disable ID editing if in edit mode (simplification)
+                                disabled={isEditing} 
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">No. Ujian</label>
+                            <input 
+                                type="text" 
+                                className="w-full border border-gray-600 p-2 rounded focus:ring-2 focus:ring-sman-blue outline-none bg-gray-700 text-white placeholder-gray-400"
+                                value={studentForm.examNumber}
+                                onChange={(e) => handleFormChange('examNumber', e.target.value)}
+                            />
+                        </div>
+                        <div className="md:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap (Wajib)</label>
+                            <input 
+                                type="text" 
+                                required
+                                className="w-full border border-gray-600 p-2 rounded focus:ring-2 focus:ring-sman-blue outline-none bg-gray-700 text-white placeholder-gray-400"
+                                value={studentForm.name}
+                                onChange={(e) => handleFormChange('name', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Kelas</label>
+                            <input 
+                                type="text" 
+                                className="w-full border border-gray-600 p-2 rounded focus:ring-2 focus:ring-sman-blue outline-none bg-gray-700 text-white placeholder-gray-400"
+                                value={studentForm.className}
+                                onChange={(e) => handleFormChange('className', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Status Kelulusan</label>
+                            <select 
+                                className="w-full border border-gray-600 p-2 rounded focus:ring-2 focus:ring-sman-blue outline-none bg-gray-700 text-white"
+                                value={studentForm.status}
+                                onChange={(e) => handleFormChange('status', e.target.value)}
+                            >
+                                <option value="LULUS">LULUS</option>
+                                <option value="TIDAK LULUS">TIDAK LULUS</option>
+                                <option value="DITUNDA">DITUNDA</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Tempat Lahir</label>
+                            <input 
+                                type="text" 
+                                className="w-full border border-gray-600 p-2 rounded focus:ring-2 focus:ring-sman-blue outline-none bg-gray-700 text-white placeholder-gray-400"
+                                value={studentForm.birthPlace}
+                                onChange={(e) => handleFormChange('birthPlace', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal Lahir</label>
+                            <input 
+                                type="date" 
+                                className="w-full border border-gray-600 p-2 rounded focus:ring-2 focus:ring-sman-blue outline-none bg-gray-700 text-white placeholder-gray-400"
+                                value={studentForm.birthDate}
+                                onChange={(e) => handleFormChange('birthDate', e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="border-t pt-4">
+                        <div className="flex justify-between items-center mb-4">
+                            <h4 className="font-semibold text-gray-800">Nilai Mata Pelajaran</h4>
+                            <button 
+                                type="button"
+                                onClick={addSubject}
+                                className="text-sm text-sman-blue hover:underline flex items-center gap-1"
+                            >
+                                <PlusCircle className="w-4 h-4" /> Tambah Mapel
+                            </button>
+                        </div>
+
+                        {validationError && (
+                          <div className="bg-red-50 text-red-600 p-3 mb-3 rounded-lg text-sm flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4" />
+                            {validationError}
+                          </div>
+                        )}
+                        
+                        <div className="space-y-3 bg-gray-50 p-4 rounded-lg">
+                            {studentForm.grades.map((grade, idx) => (
+                                <div key={idx} className="flex gap-2 items-center">
+                                    <input 
+                                        type="text" 
+                                        placeholder="Nama Mapel"
+                                        className="flex-grow border border-gray-600 p-2 rounded text-sm focus:ring-2 focus:ring-sman-blue outline-none bg-gray-700 text-white placeholder-gray-400"
+                                        value={grade.name}
+                                        onChange={(e) => handleGradeChange(idx, 'name', e.target.value)}
+                                    />
+                                    <input 
+                                        type="number" 
+                                        placeholder="0-99"
+                                        className="w-20 border border-gray-600 p-2 rounded text-sm focus:ring-2 focus:ring-sman-blue outline-none text-center bg-gray-700 text-white placeholder-gray-400"
+                                        value={grade.score === 0 ? '' : grade.score}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            
+                                            // Handle Empty (reset to 0 internally)
+                                            if (val === '') {
+                                                handleGradeChange(idx, 'score', 0);
+                                                setValidationError(null);
+                                                return;
+                                            }
+
+                                            // Max 2 chars length check (string based)
+                                            if (val.length > 2) {
+                                                setValidationError('Maksimal 2 digit angka.');
+                                                return;
+                                            }
+
+                                            const numVal = parseFloat(val);
+
+                                            // Numeric Range Check
+                                            if (numVal > 99) {
+                                                setValidationError('Nilai maksimal adalah 99 (2 digit).');
+                                                return;
+                                            }
+                                            
+                                            if (numVal < 0) return; // Prevention
+                                            
+                                            // Clear error if valid
+                                            setValidationError(null);
+                                            handleGradeChange(idx, 'score', numVal);
+                                        }}
+                                    />
+                                    <button 
+                                        type="button"
+                                        onClick={() => removeSubject(idx)}
+                                        className="text-red-500 hover:text-red-700 p-1"
+                                    >
+                                        <MinusCircle className="w-5 h-5" />
+                                    </button>
+                                </div>
+                            ))}
+                            {studentForm.grades.length === 0 && (
+                                <p className="text-center text-gray-500 text-sm italic">Belum ada nilai yang dimasukkan.</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-4 border-t">
+                        <button 
+                            type="button"
+                            onClick={() => setIsModalOpen(false)}
+                            className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                        >
+                            Batal
+                        </button>
+                        <button 
+                            type="submit"
+                            disabled={isLoading}
+                            className="px-6 py-2 bg-sman-blue text-white rounded-lg hover:bg-blue-800 transition-colors flex items-center gap-2"
+                        >
+                            {isLoading && <Loader2 className="animate-spin w-4 h-4" />}
+                            Simpan Data
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+      )}
     </div>
   );
 };
