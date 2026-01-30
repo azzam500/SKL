@@ -119,6 +119,7 @@ const Admin: React.FC = () => {
     } catch (error: any) {
       // 3. Fallback: Allow specific credential bypass if Firebase fails
       // This allows the user to access admin features even without the real DB password
+      // or if Auth is not enabled in console
       if (email === 'admin@sman1padangan.sch.id' && password === 'admin123') {
          setDemoAuth(true);
          setIsLoading(false);
@@ -144,6 +145,9 @@ const Admin: React.FC = () => {
           break;
         case 'auth/invalid-credential':
           errorMessage = 'Email atau password salah.';
+          break;
+        case 'auth/operation-not-allowed':
+          errorMessage = 'Login Email/Password belum diaktifkan di Firebase Console. Hubungi Administrator.';
           break;
         case 'auth/too-many-requests':
           errorMessage = 'Terlalu banyak percobaan. Silakan coba lagi nanti.';
@@ -238,6 +242,21 @@ const Admin: React.FC = () => {
             throw new Error("NISN dan Nama wajib diisi");
         }
 
+        // Validate Birth Date
+        if (studentForm.birthDate) {
+            const selectedDate = new Date(studentForm.birthDate);
+            const today = new Date();
+            // Reset time part for fair comparison
+            today.setHours(0, 0, 0, 0);
+            
+            if (isNaN(selectedDate.getTime())) {
+                throw new Error("Format tanggal lahir tidak valid.");
+            }
+            if (selectedDate > today) {
+                throw new Error("Tanggal lahir tidak boleh di masa depan.");
+            }
+        }
+
         const studentId = studentForm.nisn; // Use NISN as ID
         const studentData = { ...studentForm, id: studentId };
 
@@ -250,7 +269,11 @@ const Admin: React.FC = () => {
         await fetchStudentsList();
     } catch (error: any) {
         console.error(error);
-        setMessage({ type: 'error', text: 'Gagal menyimpan data: ' + error.message });
+        if (isModalOpen) {
+          setValidationError(error.message);
+        } else {
+          setMessage({ type: 'error', text: 'Gagal menyimpan data: ' + error.message });
+        }
     } finally {
         setIsLoading(false);
     }
@@ -669,21 +692,45 @@ const Admin: React.FC = () => {
             {/* TAB: SETTINGS */}
             {activeTab === 'settings' && (
               <div className="space-y-6 max-w-2xl">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal & Jam Pengumuman (ISO Format)</label>
-                  <input
-                    type="datetime-local"
-                    className="w-full border p-2 rounded bg-white text-gray-900 focus:ring-2 focus:ring-sman-blue outline-none"
-                    // Use helper to display local time (YYYY-MM-DDTHH:mm) correctly in 24h format
-                    value={toLocalISOString(tempSettings.releaseDate)}
-                    onChange={(e) => {
-                      if (!e.target.value) return;
-                      // Convert local time back to ISO string (UTC)
-                      setTempSettings({...tempSettings, releaseDate: new Date(e.target.value).toISOString()})
-                    }}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Siswa tidak dapat melihat hasil sebelum waktu ini.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal Pengumuman</label>
+                      <input
+                        type="date"
+                        required
+                        className="w-full border p-2 rounded bg-white text-gray-900 focus:ring-2 focus:ring-sman-blue outline-none"
+                        value={toLocalISOString(tempSettings.releaseDate).split('T')[0]}
+                        onChange={(e) => {
+                          const newDateVal = e.target.value;
+                          if(!newDateVal) return;
+                          const currentTimeVal = toLocalISOString(tempSettings.releaseDate).split('T')[1];
+                          // Reconstruct local date
+                          const newDate = new Date(`${newDateVal}T${currentTimeVal}`);
+                          setTempSettings({...tempSettings, releaseDate: newDate.toISOString()});
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Jam (WIB)</label>
+                      <input
+                        type="time"
+                        required
+                        className="w-full border p-2 rounded bg-white text-gray-900 focus:ring-2 focus:ring-sman-blue outline-none"
+                        value={toLocalISOString(tempSettings.releaseDate).split('T')[1]}
+                        onChange={(e) => {
+                          const newTimeVal = e.target.value;
+                          if(!newTimeVal) return;
+                          const currentDateVal = toLocalISOString(tempSettings.releaseDate).split('T')[0];
+                          const newDate = new Date(`${currentDateVal}T${newTimeVal}`);
+                          setTempSettings({...tempSettings, releaseDate: newDate.toISOString()});
+                        }}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 col-span-1 md:col-span-2 mt-[-10px]">
+                        Siswa tidak dapat melihat hasil sebelum waktu ini.
+                    </p>
                 </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Tahun Pelajaran</label>
@@ -928,7 +975,12 @@ const Admin: React.FC = () => {
                           <tbody className="divide-y divide-gray-200">
                             {processedStudents.length > 0 ? (
                               processedStudents.map((student) => {
-                                const avgScore = (student.grades.reduce((acc, curr) => acc + curr.score, 0) / (student.grades.length || 1)).toFixed(2);
+                                const totalScore = student.grades.reduce((acc, curr) => acc + curr.score, 0);
+                                const hasGrades = student.grades.length > 0;
+                                const avgScore = hasGrades ? (totalScore / student.grades.length).toFixed(2) : "0.00";
+                                // If total score is 0, display as dash, assuming 0 means unset/empty in this context
+                                const displayScore = (totalScore === 0 || !hasGrades) ? "-" : avgScore;
+                                
                                 return (
                                   <tr key={student.id} className="hover:bg-gray-50 transition">
                                     <td className="px-4 py-3 font-mono text-gray-600">{student.nisn}</td>
@@ -942,7 +994,7 @@ const Admin: React.FC = () => {
                                         {student.status}
                                       </span>
                                     </td>
-                                    <td className="px-4 py-3 text-right font-mono">{avgScore}</td>
+                                    <td className="px-4 py-3 text-right font-mono">{displayScore}</td>
                                     <td className="px-4 py-3 text-center">
                                       <div className="flex justify-center gap-2">
                                         <button 
@@ -999,6 +1051,13 @@ const Admin: React.FC = () => {
                 </div>
                 
                 <form onSubmit={handleSaveStudent} className="p-6 space-y-6">
+                    {validationError && (
+                      <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center gap-2 border border-red-100">
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                        {validationError}
+                      </div>
+                    )}
+
                     {/* Identity Section */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
@@ -1068,6 +1127,7 @@ const Admin: React.FC = () => {
                                 type="date" 
                                 className="w-full border border-gray-600 p-2 rounded focus:ring-2 focus:ring-sman-blue outline-none bg-gray-700 text-white placeholder-gray-400"
                                 value={studentForm.birthDate}
+                                max={new Date().toISOString().split('T')[0]}
                                 onChange={(e) => handleFormChange('birthDate', e.target.value)}
                             />
                         </div>
@@ -1084,13 +1144,6 @@ const Admin: React.FC = () => {
                                 <PlusCircle className="w-4 h-4" /> Tambah Mapel
                             </button>
                         </div>
-
-                        {validationError && (
-                          <div className="bg-red-50 text-red-600 p-3 mb-3 rounded-lg text-sm flex items-center gap-2">
-                            <AlertTriangle className="w-4 h-4" />
-                            {validationError}
-                          </div>
-                        )}
                         
                         <div className="space-y-3 bg-gray-50 p-4 rounded-lg">
                             {studentForm.grades.map((grade, idx) => (
@@ -1101,6 +1154,12 @@ const Admin: React.FC = () => {
                                         className="flex-grow border border-gray-600 p-2 rounded text-sm focus:ring-2 focus:ring-sman-blue outline-none bg-gray-700 text-white placeholder-gray-400"
                                         value={grade.name}
                                         onChange={(e) => handleGradeChange(idx, 'name', e.target.value)}
+                                        onBlur={(e) => {
+                                            const val = e.target.value;
+                                            // Capitalize start of words and trim whitespace
+                                            const formatted = val.replace(/\b\w/g, c => c.toUpperCase()).trim();
+                                            handleGradeChange(idx, 'name', formatted);
+                                        }}
                                     />
                                     <input 
                                         type="number" 
