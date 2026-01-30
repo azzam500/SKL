@@ -17,7 +17,7 @@ const Header: React.FC = () => {
                <GraduationCap className="text-sman-blue w-8 h-8" />
             </div>
             <div className="text-center md:text-left">
-              <h1 className="text-lg md:text-xl font-bold font-serif tracking-wide text-white leading-tight">
+              <h1 className="text-lg md:text-xl font-bold font-serif tracking-wide text-white leading-tight lining-nums">
                 {SCHOOL_INFO.name}
               </h1>
               <p className="text-xs text-sman-gold font-medium uppercase tracking-wider">

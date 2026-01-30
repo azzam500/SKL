@@ -57,7 +57,7 @@ const Home: React.FC = () => {
         <div className="absolute bottom-0 right-0 w-96 h-96 bg-sman-red/20 rounded-full translate-x-1/3 translate-y-1/3 blur-3xl"></div>
 
         <div className="relative z-10 max-w-4xl mx-auto">
-          <h1 className="text-3xl md:text-5xl font-serif font-bold text-white mb-6 leading-tight">
+          <h1 className="text-3xl md:text-5xl font-serif font-bold text-white mb-6 leading-tight lining-nums">
             Pengumuman Kelulusan <br/>
             <span className="text-sman-gold">Tahun Pelajaran {settings.schoolYear}</span>
           </h1>

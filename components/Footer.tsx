@@ -9,7 +9,7 @@ const Footer: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
           {/* School Identity */}
           <div className="text-center md:text-left">
-            <h3 className="text-xl font-serif font-bold mb-4 text-sman-gold">{SCHOOL_INFO.name}</h3>
+            <h3 className="text-xl font-serif font-bold mb-4 text-sman-gold lining-nums">{SCHOOL_INFO.name}</h3>
             <p className="text-gray-400 text-sm mb-4 leading-relaxed">
               Mewujudkan generasi yang cerdas, berkarakter, dan berdaya saing global dengan berlandaskan iman dan takwa.
             </p>

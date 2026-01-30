@@ -120,7 +120,7 @@ const Result: React.FC = () => {
             <div className="text-center flex-1">
                 <h3 className="text-lg font-bold uppercase tracking-wide">Pemerintah Provinsi Jawa Timur</h3>
                 <h3 className="text-lg font-bold uppercase tracking-wide">Dinas Pendidikan</h3>
-                <h2 className="text-2xl font-black font-serif uppercase text-black my-1">{SCHOOL_INFO.name}</h2>
+                <h2 className="text-2xl font-black font-serif uppercase text-black my-1 lining-nums">{SCHOOL_INFO.name}</h2>
                 <p className="text-sm">{SCHOOL_INFO.address}</p>
                 <p className="text-sm">Telp: {SCHOOL_INFO.phone} | Email: {SCHOOL_INFO.email}</p>
             </div>
