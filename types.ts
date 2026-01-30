@@ -28,4 +28,5 @@ export interface AppState {
   settings: AnnouncementSettings;
   setSettings: (settings: AnnouncementSettings) => void;
   importStudents: (students: Student[]) => void;
+  getAllStudents: () => Promise<Student[]>;
 }

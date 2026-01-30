@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, AlertCircle, Loader2 } from 'lucide-react';
+import { Search, AlertCircle, Loader2, Printer } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext';
 import Countdown from '../components/Countdown';
@@ -86,7 +86,7 @@ const Home: React.FC = () => {
                         setError('');
                       }}
                       placeholder="Contoh: 1234567890"
-                      className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-lg focus:border-sman-blue focus:ring-4 focus:ring-sman-blue/10 transition-all outline-none text-lg"
+                      className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-lg focus:border-sman-blue focus:ring-4 focus:ring-sman-blue/10 transition-all outline-none text-lg bg-white text-gray-900"
                       disabled={isSearching}
                     />
                   </div>
@@ -138,7 +138,7 @@ const Home: React.FC = () => {
            </div>
            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 text-center">
               <div className="w-12 h-12 bg-blue-50 text-sman-blue rounded-full flex items-center justify-center mx-auto mb-4">
-                <Search className="w-6 h-6" /> {/* Reusing icon for simplicity */}
+                <Printer className="w-6 h-6" />
               </div>
               <h3 className="font-bold text-lg mb-2">3. Cetak SKL</h3>
               <p className="text-gray-600 text-sm">Jika dinyatakan lulus, Anda dapat mencetak Surat Keterangan Lulus (SKL) Sementara.</p>

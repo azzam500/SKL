@@ -57,23 +57,39 @@ const Result: React.FC = () => {
     <div className="bg-gray-100 min-h-screen pb-12">
       <style>{`
         @media print {
-          @page { size: A4; margin: 2cm; }
+          @page { 
+            size: A4; 
+            margin: 0; 
+          }
           body { 
             background: white; 
             margin: 0; 
+            padding: 0;
             -webkit-print-color-adjust: exact !important; 
             print-color-adjust: exact !important; 
           }
-          .no-print { display: none !important; }
+          /* Hide everything by default */
+          body * { 
+            visibility: hidden; 
+          }
+          /* Show only the printable area */
+          #printable-area, #printable-area * { 
+            visibility: visible; 
+          }
+          .no-print { 
+            display: none !important; 
+          }
           #printable-area { 
             position: absolute; 
             top: 0; 
             left: 0; 
-            width: 100%; 
+            width: 210mm; /* A4 Width */
+            min-height: 297mm; /* A4 Height */
             margin: 0; 
-            padding: 0; 
+            padding: 2cm; 
             box-shadow: none !important; 
             background: white; 
+            z-index: 9999;
           }
         }
       `}</style>
@@ -96,8 +112,9 @@ const Result: React.FC = () => {
           </div>
           {isPassed && (
             <button 
+              type="button"
               onClick={handlePrint}
-              className="bg-white text-green-700 hover:bg-gray-50 px-6 py-3 rounded-lg font-bold shadow-md transition-all flex items-center gap-2"
+              className="bg-white text-green-700 hover:bg-gray-50 px-6 py-3 rounded-lg font-bold shadow-md transition-all flex items-center gap-2 cursor-pointer"
             >
               <Printer className="w-5 h-5" />
               Cetak SKL
@@ -107,9 +124,9 @@ const Result: React.FC = () => {
       </div>
 
       {/* Printable Area / SKL View */}
-      <div id="printable-area" className="bg-white mx-auto shadow-2xl relative">
+      <div id="printable-area" className="bg-white mx-auto shadow-2xl relative max-w-[210mm] p-[2cm]">
         {/* Decorative Watermark */}
-        <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none">
+        <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none overflow-hidden">
              <img src={SCHOOL_INFO.logoPlaceholder} alt="Watermark" className="w-[500px]" />
         </div>
 

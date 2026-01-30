@@ -13,6 +13,7 @@ interface AppContextType {
   searchStudent: (queryStr: string) => Promise<Student | null>;
   getStudentById: (id: string) => Promise<Student | null>;
   importStudents: (students: Student[]) => Promise<void>;
+  getAllStudents: () => Promise<Student[]>;
   logout: () => Promise<void>;
   isDemoMode: boolean;
 }
@@ -96,9 +97,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const searchStudent = async (queryStr: string): Promise<Student | null> => {
-    // Fallback for Demo Mode
+    // Always check for dummy data first to ensure it's accessible for testing
+    // regardless of Firebase configuration status
+    if (queryStr === '1234567890' || queryStr === '24-001-001') {
+      return FALLBACK_STUDENT;
+    }
+
+    // Fallback for Demo Mode (if not checking for specific dummy data)
     if (!isFirebaseConfigured) {
-      if (queryStr === '1234567890') return FALLBACK_STUDENT;
       return null;
     }
 
@@ -125,8 +131,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const getStudentById = async (id: string): Promise<Student | null> => {
+    // Ensure the result page works for the dummy student
+    if (id === 'demo-1') {
+      return FALLBACK_STUDENT;
+    }
+
     if (!isFirebaseConfigured) {
-      if (id === 'demo-1') return FALLBACK_STUDENT;
       return null;
     }
 
@@ -142,6 +152,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return null;
     }
   }
+
+  const getAllStudents = async (): Promise<Student[]> => {
+    if (!isFirebaseConfigured) {
+      return [FALLBACK_STUDENT];
+    }
+    try {
+      const studentsRef = collection(db, 'students');
+      const snapshot = await getDocs(studentsRef);
+      return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Student));
+    } catch (e) {
+      console.error("Error fetching all students:", e);
+      return [];
+    }
+  };
 
   const importStudents = async (newStudents: Student[]) => {
     if (!isFirebaseConfigured) {
@@ -166,6 +190,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       searchStudent, 
       getStudentById,
       importStudents,
+      getAllStudents,
       logout,
       isDemoMode: !isFirebaseConfigured
     }}>
