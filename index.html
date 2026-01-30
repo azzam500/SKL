@@ -28,10 +28,30 @@
     </script>
     <style>
       @media print {
-        @page { size: A4; margin: 1cm; }
+        @page { 
+          size: A4; 
+          margin: 0; 
+        }
+        body {
+          margin: 0;
+          padding: 0;
+          background: white;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
         body * { visibility: hidden; }
         #printable-area, #printable-area * { visibility: visible; }
-        #printable-area { position: absolute; left: 0; top: 0; width: 100%; }
+        #printable-area { 
+          position: absolute; 
+          left: 0; 
+          top: 0; 
+          width: 210mm;
+          min-height: 297mm;
+          margin: 0;
+          padding: 2cm;
+          box-shadow: none !important;
+          background: white;
+        }
         .no-print { display: none !important; }
       }
     </style>
@@ -42,7 +62,12 @@
     "react/": "https://esm.sh/react@^19.2.4/",
     "react": "https://esm.sh/react@^19.2.4",
     "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "react-router-dom": "https://esm.sh/react-router-dom@^7.13.0"
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.13.0",
+    "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+    "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
+    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js",
+    "react-qr-code": "https://esm.sh/react-qr-code@2.0.15",
+    "firebase/": "https://esm.sh/firebase@^12.8.0/"
   }
 }
 </script>

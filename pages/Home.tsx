@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { Search, AlertCircle } from 'lucide-react';
+import { Search, AlertCircle, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext';
 import Countdown from '../components/Countdown';
 
 const Home: React.FC = () => {
-  const { settings, students } = useApp();
+  const { settings, searchStudent } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const [isAnnouncementOpen, setIsAnnouncementOpen] = useState(() => {
     return new Date() >= new Date(settings.releaseDate);
   });
@@ -17,7 +18,7 @@ const Home: React.FC = () => {
     setIsAnnouncementOpen(true);
   };
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAnnouncementOpen) return;
 
@@ -26,13 +27,24 @@ const Home: React.FC = () => {
       return;
     }
 
-    const query = searchQuery.trim();
-    const student = students.find(s => s.nisn === query || s.examNumber === query);
+    setIsSearching(true);
+    setError('');
 
-    if (student) {
-      navigate(`/result/${student.id}`);
-    } else {
-      setError('Data siswa tidak ditemukan. Periksa kembali nomor yang Anda masukkan.');
+    try {
+      const query = searchQuery.trim();
+      // Server-side filtered query
+      const student = await searchStudent(query);
+
+      if (student) {
+        navigate(`/result/${student.id}`);
+      } else {
+        setError('Data siswa tidak ditemukan. Periksa kembali nomor yang Anda masukkan.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Terjadi kesalahan koneksi. Silakan coba lagi.');
+    } finally {
+      setIsSearching(false);
     }
   };
 
@@ -75,6 +87,7 @@ const Home: React.FC = () => {
                       }}
                       placeholder="Contoh: 1234567890"
                       className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-lg focus:border-sman-blue focus:ring-4 focus:ring-sman-blue/10 transition-all outline-none text-lg"
+                      disabled={isSearching}
                     />
                   </div>
                 </div>
@@ -88,9 +101,17 @@ const Home: React.FC = () => {
 
                 <button
                   type="submit"
-                  className="w-full bg-sman-red hover:bg-red-700 text-white font-bold py-3.5 rounded-lg shadow-lg hover:shadow-xl transition-all active:transform active:scale-95 text-lg mt-2"
+                  disabled={isSearching}
+                  className="w-full bg-sman-red hover:bg-red-700 text-white font-bold py-3.5 rounded-lg shadow-lg hover:shadow-xl transition-all active:transform active:scale-95 text-lg mt-2 flex justify-center items-center gap-2"
                 >
-                  CEK KELULUSAN
+                  {isSearching ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      MEMERIKSA DATA...
+                    </>
+                  ) : (
+                    "CEK KELULUSAN"
+                  )}
                 </button>
               </form>
             </div>

@@ -1,76 +1,147 @@
 import React, { useState } from 'react';
 import { useApp } from '../contexts/AppContext';
-import { Upload, Save, Settings, Users, LogOut, CheckCircle } from 'lucide-react';
+import { Upload, Save, Settings, Users, LogOut, CheckCircle, Loader2, AlertTriangle, AlertCircle } from 'lucide-react';
 import { Student } from '../types';
 import { useNavigate } from 'react-router-dom';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../services/firebase';
 
 const Admin: React.FC = () => {
-  const { students, settings, setSettings, importStudents } = useApp();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { user, settings, setSettings, importStudents, logout, isDemoMode } = useApp();
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [jsonInput, setJsonInput] = useState('');
   const [activeTab, setActiveTab] = useState<'settings' | 'data'>('settings');
   const [tempSettings, setTempSettings] = useState(settings);
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // Local state for demo mode auth
+  const [demoAuth, setDemoAuth] = useState(false);
 
   const navigate = useNavigate();
 
-  // Mock Login
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === 'admin123') {
-      setIsAuthenticated(true);
-      setError(null);
-    } else {
-      setError('Password salah!');
+    setIsLoading(true);
+    setMessage(null);
+
+    // Demo Mode Login
+    if (isDemoMode) {
+      if (password === 'admin123') {
+        setDemoAuth(true);
+      } else {
+        setMessage({ type: 'error', text: 'Password salah (Mode Demo: gunakan admin123)' });
+      }
+      setIsLoading(false);
+      return;
+    }
+
+    // Firebase Login
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error: any) {
+      setMessage({ type: 'error', text: 'Login gagal. Periksa email dan password.' });
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const setError = (msg: string | null) => {
-      if(msg) setMessage({ type: 'error', text: msg });
-      else setMessage(null);
+  const handleLogout = async () => {
+    if (isDemoMode) {
+      setDemoAuth(false);
+    } else {
+      await logout();
+    }
+    navigate('/');
   }
 
-  const handleSaveSettings = () => {
-    setSettings(tempSettings);
-    setMessage({ type: 'success', text: 'Pengaturan berhasil disimpan!' });
-    setTimeout(() => setMessage(null), 3000);
+  const handleSaveSettings = async () => {
+    setIsLoading(true);
+    try {
+      await setSettings(tempSettings);
+      setMessage({ type: 'success', text: isDemoMode ? 'Pengaturan disimpan (Sementara)' : 'Pengaturan berhasil disimpan ke Database!' });
+      setTimeout(() => setMessage(null), 3000);
+    } catch (e) {
+      setMessage({ type: 'error', text: 'Gagal menyimpan pengaturan.' });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleImportData = () => {
+  const handleImportData = async () => {
+    setIsLoading(true);
+    setMessage(null);
     try {
       const parsed: Student[] = JSON.parse(jsonInput);
       if (!Array.isArray(parsed) || parsed.length === 0 || !parsed[0].nisn) {
         throw new Error('Format JSON tidak valid');
       }
-      importStudents(parsed);
-      setMessage({ type: 'success', text: `Berhasil mengimpor ${parsed.length} data siswa!` });
+      await importStudents(parsed);
+      setMessage({ type: 'success', text: isDemoMode ? 'Simulasi Import Sukses (Mode Demo)' : `Berhasil mengimpor ${parsed.length} data siswa ke Firestore!` });
       setJsonInput('');
     } catch (e) {
-      setError('Gagal memproses data. Pastikan format JSON valid.');
+      setMessage({ type: 'error', text: 'Gagal memproses data. Pastikan format JSON valid.' });
+    } finally {
+      setIsLoading(false);
     }
   };
 
+  const isAuthenticated = isDemoMode ? demoAuth : !!user;
+  const userEmail = isDemoMode ? 'demo@local' : user?.email;
+
   if (!isAuthenticated) {
     return (
-      <div className="min-h-[80vh] flex items-center justify-center bg-gray-100">
+      <div className="min-h-[80vh] flex items-center justify-center bg-gray-100 px-4">
         <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full">
           <h2 className="text-2xl font-bold text-center text-sman-blue mb-6">Admin Login</h2>
+          
+          {isDemoMode && (
+            <div className="mb-4 p-3 bg-yellow-50 text-yellow-800 text-sm rounded-lg flex gap-2 items-start border border-yellow-200">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <div>
+                <strong>Mode Demo Aktif:</strong> Firebase belum dikonfigurasi.
+                <br />Gunakan password: <code>admin123</code>
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <input
+                type="email"
+                required={!isDemoMode}
+                className="w-full border p-2 rounded focus:ring-2 focus:ring-sman-blue outline-none"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="admin@sman1padangan.sch.id"
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
               <input
                 type="password"
+                required
                 className="w-full border p-2 rounded focus:ring-2 focus:ring-sman-blue outline-none"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
-            {message && message.type === 'error' && <p className="text-red-500 text-sm">{message.text}</p>}
-            <button className="w-full bg-sman-blue text-white py-2 rounded hover:bg-blue-800 transition">
-              Masuk
+            {message && message.type === 'error' && (
+                <div className="bg-red-50 text-red-600 p-3 rounded text-sm flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4"/>
+                    {message.text}
+                </div>
+            )}
+            <button 
+                type="submit"
+                disabled={isLoading} 
+                className="w-full bg-sman-blue text-white py-2 rounded hover:bg-blue-800 transition flex justify-center items-center"
+            >
+              {isLoading ? <Loader2 className="animate-spin w-5 h-5"/> : "Masuk"}
             </button>
-            <button type="button" onClick={() => navigate('/')} className="w-full text-gray-500 text-sm hover:underline">
+            <button type="button" onClick={() => navigate('/')} className="w-full text-gray-500 text-sm hover:underline text-center">
                 Kembali ke Beranda
             </button>
           </form>
@@ -82,30 +153,20 @@ const Admin: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-800">Dashboard Admin</h1>
+        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-800">Dashboard Admin</h1>
+            <p className="text-sm text-gray-500 flex items-center gap-2">
+              Login sebagai: {userEmail}
+              {isDemoMode && <span className="bg-yellow-200 text-yellow-800 text-xs px-2 py-0.5 rounded-full font-bold">DEMO</span>}
+            </p>
+          </div>
           <button 
-            onClick={() => setIsAuthenticated(false)}
+            onClick={handleLogout}
             className="flex items-center gap-2 text-red-600 hover:bg-red-50 px-4 py-2 rounded transition"
           >
             <LogOut className="w-5 h-5" /> Logout
           </button>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-sman-blue">
-            <h3 className="text-gray-500 text-sm uppercase">Total Siswa</h3>
-            <p className="text-3xl font-bold text-gray-800">{students.length}</p>
-          </div>
-          <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500">
-            <h3 className="text-gray-500 text-sm uppercase">Lulus</h3>
-            <p className="text-3xl font-bold text-gray-800">{students.filter(s => s.status === 'LULUS').length}</p>
-          </div>
-          <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-red-500">
-            <h3 className="text-gray-500 text-sm uppercase">Tidak Lulus/Tunda</h3>
-            <p className="text-3xl font-bold text-gray-800">{students.filter(s => s.status !== 'LULUS').length}</p>
-          </div>
         </div>
 
         {/* Tabs */}
@@ -121,7 +182,7 @@ const Admin: React.FC = () => {
               onClick={() => setActiveTab('data')}
               className={`flex-1 py-4 flex items-center justify-center gap-2 font-medium ${activeTab === 'data' ? 'bg-blue-50 text-sman-blue border-b-2 border-sman-blue' : 'text-gray-500 hover:bg-gray-50'}`}
             >
-              <Users className="w-5 h-5" /> Data Siswa
+              <Users className="w-5 h-5" /> Upload Data Siswa
             </button>
           </div>
 
@@ -179,9 +240,11 @@ const Admin: React.FC = () => {
                 </div>
                 <button
                   onClick={handleSaveSettings}
-                  className="bg-sman-blue text-white px-6 py-2 rounded hover:bg-blue-800 flex items-center gap-2"
+                  disabled={isLoading}
+                  className="bg-sman-blue text-white px-6 py-2 rounded hover:bg-blue-800 flex items-center gap-2 disabled:opacity-50"
                 >
-                  <Save className="w-4 h-4" /> Simpan Pengaturan
+                  {isLoading ? <Loader2 className="animate-spin w-4 h-4"/> : <Save className="w-4 h-4" />}
+                  Simpan Pengaturan
                 </button>
               </div>
             )}
@@ -191,9 +254,14 @@ const Admin: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Import Data Siswa (JSON)</label>
                   <div className="bg-yellow-50 p-4 rounded text-sm text-yellow-800 mb-2 border border-yellow-200">
-                    <p className="font-bold">Format JSON yang dibutuhkan:</p>
-                    <code className="block mt-1 font-mono text-xs">
-                      [{`{ "id": "1", "nisn": "...", "name": "...", "status": "LULUS", "grades": [...] }`}, ...]
+                    <p className="font-bold">Instruksi Upload:</p>
+                    <ul className="list-disc ml-5 mt-1">
+                        <li>Data akan diupload ke Firestore.</li>
+                        <li>Gunakan NISN sebagai identitas unik. Jika NISN sama, data lama akan tertimpa.</li>
+                        <li>Maksimum 500 siswa per batch.</li>
+                    </ul>
+                    <code className="block mt-2 font-mono text-xs p-2 bg-white border">
+                      [{`{ "nisn": "123", "examNumber": "...", "name": "...", "status": "LULUS", "grades": [...] }`}, ...]
                     </code>
                   </div>
                   <textarea
@@ -206,38 +274,12 @@ const Admin: React.FC = () => {
                 </div>
                 <button
                   onClick={handleImportData}
-                  className="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 flex items-center gap-2"
+                  disabled={isLoading}
+                  className="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 flex items-center gap-2 disabled:opacity-50"
                 >
-                  <Upload className="w-4 h-4" /> Import Data
+                   {isLoading ? <Loader2 className="animate-spin w-4 h-4"/> : <Upload className="w-4 h-4" />}
+                   Upload ke Database
                 </button>
-
-                <div className="mt-8">
-                    <h3 className="font-bold mb-4">Preview Data Saat Ini (5 Data Teratas)</h3>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left">
-                            <thead className="bg-gray-100">
-                                <tr>
-                                    <th className="p-3">NISN</th>
-                                    <th className="p-3">Nama</th>
-                                    <th className="p-3">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {students.slice(0, 5).map(s => (
-                                    <tr key={s.id} className="border-b">
-                                        <td className="p-3">{s.nisn}</td>
-                                        <td className="p-3">{s.name}</td>
-                                        <td className="p-3">
-                                            <span className={`px-2 py-1 rounded text-xs ${s.status === 'LULUS' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                                {s.status}
-                                            </span>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
               </div>
             )}
           </div>
