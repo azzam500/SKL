@@ -1,16 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useApp } from '../contexts/AppContext';
-import { Upload, Save, Settings, Users, LogOut, CheckCircle, Loader2, AlertTriangle, AlertCircle } from 'lucide-react';
-import { Student } from '../types';
+import { Upload, Save, Settings, Users, LogOut, CheckCircle, Loader2, AlertTriangle, AlertCircle, FileSpreadsheet, Download } from 'lucide-react';
+import { Student, SubjectGrade } from '../types';
 import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../services/firebase';
+import Papa from 'papaparse';
 
 const Admin: React.FC = () => {
   const { user, settings, setSettings, importStudents, logout, isDemoMode } = useApp();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  
+  // JSON State
   const [jsonInput, setJsonInput] = useState('');
+  
+  // CSV State
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [processedRecords, setProcessedRecords] = useState(0);
+
   const [activeTab, setActiveTab] = useState<'settings' | 'data'>('settings');
   const [tempSettings, setTempSettings] = useState(settings);
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
@@ -26,7 +36,6 @@ const Admin: React.FC = () => {
     setIsLoading(true);
     setMessage(null);
 
-    // Demo Mode Login
     if (isDemoMode) {
       if (password === 'admin123') {
         setDemoAuth(true);
@@ -37,7 +46,6 @@ const Admin: React.FC = () => {
       return;
     }
 
-    // Firebase Login
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (error: any) {
@@ -69,7 +77,126 @@ const Admin: React.FC = () => {
     }
   };
 
-  const handleImportData = async () => {
+  // --- CSV UPLOAD LOGIC ---
+
+  const downloadTemplate = () => {
+    const headers = ['nisn', 'examNumber', 'name', 'className', 'status', 'birthPlace', 'birthDate', 'Pendidikan Agama', 'Matematika', 'Bahasa Indonesia', 'Bahasa Inggris'];
+    const dummyRow = ['1234567890', '24-001-001', 'Contoh Siswa', 'XII MIPA 1', 'LULUS', 'Bojonegoro', '2006-05-15', '85', '90', '88', '82'];
+    
+    const csvContent = "data:text/csv;charset=utf-8," 
+        + headers.join(",") + "\n" + dummyRow.join(",");
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "template_siswa.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleCsvUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsLoading(true);
+    setMessage(null);
+    setUploadProgress(0);
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          const rawData = results.data as any[];
+          if (rawData.length === 0) throw new Error("File CSV kosong");
+
+          const parsedStudents: Student[] = [];
+          
+          // Helper to check if a column is a bio data field
+          const isBioField = (key: string) => 
+            ['nisn', 'examNumber', 'name', 'className', 'status', 'birthPlace', 'birthDate', 'id'].includes(key);
+
+          rawData.forEach((row, index) => {
+            if (!row.nisn || !row.name) {
+               console.warn(`Row ${index + 1} skipped: Missing NISN or Name`);
+               return;
+            }
+
+            const grades: SubjectGrade[] = [];
+            
+            // Extract Grades: Any key that isn't a bio field is treated as a subject
+            Object.keys(row).forEach(key => {
+              if (!isBioField(key) && row[key]) {
+                const score = parseFloat(row[key]);
+                if (!isNaN(score)) {
+                  grades.push({ name: key, score: score });
+                }
+              }
+            });
+
+            parsedStudents.push({
+              id: row.nisn, // Use NISN as ID
+              nisn: row.nisn,
+              examNumber: row.examNumber || '',
+              name: row.name,
+              className: row.className || '',
+              status: (row.status?.toUpperCase() === 'LULUS' ? 'LULUS' : 
+                       row.status?.toUpperCase() === 'DITUNDA' ? 'DITUNDA' : 'TIDAK LULUS'),
+              birthPlace: row.birthPlace || '',
+              birthDate: row.birthDate || '', // Expects YYYY-MM-DD
+              grades: grades
+            });
+          });
+
+          setTotalRecords(parsedStudents.length);
+          await uploadInChunks(parsedStudents);
+          
+          if (fileInputRef.current) fileInputRef.current.value = ""; // Reset input
+        } catch (err: any) {
+          setMessage({ type: 'error', text: `Gagal memproses CSV: ${err.message}` });
+          setIsLoading(false);
+        }
+      },
+      error: (err) => {
+        setMessage({ type: 'error', text: `Error parsing CSV: ${err.message}` });
+        setIsLoading(false);
+      }
+    });
+  };
+
+  const uploadInChunks = async (students: Student[]) => {
+    const CHUNK_SIZE = 400; // Safe below Firestore 500 limit
+    let processed = 0;
+
+    try {
+      for (let i = 0; i < students.length; i += CHUNK_SIZE) {
+        const chunk = students.slice(i, i + CHUNK_SIZE);
+        await importStudents(chunk);
+        
+        processed += chunk.length;
+        setProcessedRecords(processed);
+        setUploadProgress(Math.min(100, Math.round((processed / students.length) * 100)));
+        
+        // Small delay to allow UI to update and not freeze browser
+        await new Promise(resolve => setTimeout(resolve, 50)); 
+      }
+
+      setMessage({ 
+        type: 'success', 
+        text: `Sukses! ${processed} data siswa berhasil diupload.` 
+      });
+    } catch (e) {
+      console.error(e);
+      setMessage({ type: 'error', text: 'Terjadi kesalahan saat mengupload ke database.' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- JSON UPLOAD LOGIC ---
+
+  const handleJsonImportData = async () => {
     setIsLoading(true);
     setMessage(null);
     try {
@@ -250,36 +377,91 @@ const Admin: React.FC = () => {
             )}
 
             {activeTab === 'data' && (
-              <div className="space-y-6">
+              <div className="space-y-8">
+                
+                {/* CSV Upload Section */}
+                <div className="bg-white border rounded-lg p-6 shadow-sm">
+                   <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <FileSpreadsheet className="text-green-600 w-6 h-6" />
+                        <h3 className="font-bold text-lg">Bulk Upload CSV</h3>
+                      </div>
+                      <button 
+                        onClick={downloadTemplate}
+                        className="text-sm text-sman-blue hover:underline flex items-center gap-1"
+                      >
+                        <Download className="w-4 h-4" /> Download Template CSV
+                      </button>
+                   </div>
+                   
+                   <p className="text-sm text-gray-600 mb-4">
+                     Upload file CSV untuk menambahkan banyak siswa sekaligus. 
+                     Format kolom: <code>nisn</code>, <code>name</code>, <code>status</code>, dll. 
+                     Kolom lain akan otomatis dianggap sebagai Mata Pelajaran.
+                   </p>
+
+                   <div className="flex gap-4 items-center">
+                     <input 
+                        ref={fileInputRef}
+                        type="file" 
+                        accept=".csv"
+                        disabled={isLoading}
+                        onChange={handleCsvUpload}
+                        className="block w-full text-sm text-gray-500
+                          file:mr-4 file:py-2 file:px-4
+                          file:rounded-full file:border-0
+                          file:text-sm file:font-semibold
+                          file:bg-blue-50 file:text-sman-blue
+                          hover:file:bg-blue-100
+                        "
+                      />
+                      {isLoading && uploadProgress > 0 && (
+                        <span className="text-sm font-bold text-sman-blue whitespace-nowrap">
+                          {uploadProgress}%
+                        </span>
+                      )}
+                   </div>
+
+                   {/* Progress Bar */}
+                   {isLoading && uploadProgress > 0 && (
+                     <div className="w-full bg-gray-200 rounded-full h-2.5 mt-4">
+                        <div 
+                          className="bg-sman-blue h-2.5 rounded-full transition-all duration-300" 
+                          style={{ width: `${uploadProgress}%` }}
+                        ></div>
+                        <p className="text-xs text-center mt-1 text-gray-500">
+                          Mengupload {processedRecords} dari {totalRecords} data...
+                        </p>
+                     </div>
+                   )}
+                </div>
+
+                <div className="relative flex py-2 items-center">
+                    <div className="flex-grow border-t border-gray-300"></div>
+                    <span className="flex-shrink-0 mx-4 text-gray-400 text-sm">Atau gunakan JSON</span>
+                    <div className="flex-grow border-t border-gray-300"></div>
+                </div>
+
+                {/* JSON Upload Section */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Import Data Siswa (JSON)</label>
-                  <div className="bg-yellow-50 p-4 rounded text-sm text-yellow-800 mb-2 border border-yellow-200">
-                    <p className="font-bold">Instruksi Upload:</p>
-                    <ul className="list-disc ml-5 mt-1">
-                        <li>Data akan diupload ke Firestore.</li>
-                        <li>Gunakan NISN sebagai identitas unik. Jika NISN sama, data lama akan tertimpa.</li>
-                        <li>Maksimum 500 siswa per batch.</li>
-                    </ul>
-                    <code className="block mt-2 font-mono text-xs p-2 bg-white border">
-                      [{`{ "nisn": "123", "examNumber": "...", "name": "...", "status": "LULUS", "grades": [...] }`}, ...]
-                    </code>
-                  </div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Import Data Raw JSON</label>
                   <textarea
-                    rows={10}
+                    rows={5}
                     className="w-full border p-4 rounded font-mono text-sm focus:ring-2 focus:ring-sman-blue outline-none"
-                    placeholder="Paste JSON data here..."
+                    placeholder="[{ 'nisn': '123', ... }]"
                     value={jsonInput}
                     onChange={(e) => setJsonInput(e.target.value)}
                   ></textarea>
+                  <button
+                    onClick={handleJsonImportData}
+                    disabled={isLoading}
+                    className="mt-2 bg-gray-600 text-white px-6 py-2 rounded hover:bg-gray-700 flex items-center gap-2 disabled:opacity-50 text-sm"
+                  >
+                     {isLoading ? <Loader2 className="animate-spin w-4 h-4"/> : <Upload className="w-4 h-4" />}
+                     Upload JSON
+                  </button>
                 </div>
-                <button
-                  onClick={handleImportData}
-                  disabled={isLoading}
-                  className="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 flex items-center gap-2 disabled:opacity-50"
-                >
-                   {isLoading ? <Loader2 className="animate-spin w-4 h-4"/> : <Upload className="w-4 h-4" />}
-                   Upload ke Database
-                </button>
+
               </div>
             )}
           </div>

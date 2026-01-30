@@ -55,6 +55,29 @@ const Result: React.FC = () => {
 
   return (
     <div className="bg-gray-100 min-h-screen pb-12">
+      <style>{`
+        @media print {
+          @page { size: A4; margin: 2cm; }
+          body { 
+            background: white; 
+            margin: 0; 
+            -webkit-print-color-adjust: exact !important; 
+            print-color-adjust: exact !important; 
+          }
+          .no-print { display: none !important; }
+          #printable-area { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            margin: 0; 
+            padding: 0; 
+            box-shadow: none !important; 
+            background: white; 
+          }
+        }
+      `}</style>
+
       {isPassed && <Confetti />}
       
       {/* Screen Only Header / Navigation */}
