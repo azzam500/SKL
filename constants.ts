@@ -15,7 +15,11 @@ export const INITIAL_SETTINGS: AnnouncementSettings = {
   isLive: false,
   schoolYear: "2023/2024",
   headmaster: "Drs. H. MASYHADI, M.Pd.",
-  headmasterNip: "19680101 199003 1 005"
+  headmasterNip: "19680101 199003 1 005",
+  // Popup Defaults
+  popupEnabled: true,
+  popupText: "Gunakan NISN atau Nomor Peserta Ujian yang valid untuk mengecek status kelulusan Anda.",
+  popupDuration: 10
 };
 
 // MOCK_STUDENTS removed to ensure data security via Firestore

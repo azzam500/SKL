@@ -21,6 +21,10 @@ export interface AnnouncementSettings {
   schoolYear: string;
   headmaster: string;
   headmasterNip: string;
+  // Popup Configuration
+  popupEnabled?: boolean;
+  popupText?: string;
+  popupDuration?: number; // in seconds
 }
 
 export interface AppState {

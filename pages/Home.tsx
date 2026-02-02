@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Search, AlertCircle, Loader2, Printer } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, AlertCircle, Loader2, X, Info } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext';
 import Countdown from '../components/Countdown';
@@ -12,7 +12,24 @@ const Home: React.FC = () => {
   const [isAnnouncementOpen, setIsAnnouncementOpen] = useState(() => {
     return new Date() >= new Date(settings.releaseDate);
   });
+  const [showPopup, setShowPopup] = useState(false);
+
   const navigate = useNavigate();
+
+  useEffect(() => {
+    // Check if popup is enabled in settings
+    if (settings.popupEnabled !== false) { // Default to true if undefined
+      setShowPopup(true);
+      
+      // Auto hide based on settings duration (default 10s)
+      const duration = (settings.popupDuration || 10) * 1000;
+      const timer = setTimeout(() => {
+        setShowPopup(false);
+      }, duration);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [settings.popupEnabled, settings.popupDuration]);
 
   const handleCountdownComplete = () => {
     setIsAnnouncementOpen(true);
@@ -49,14 +66,14 @@ const Home: React.FC = () => {
   };
 
   return (
-    <div className="min-h-[80vh] flex flex-col items-center">
-      {/* Hero Section */}
-      <div className="w-full bg-gradient-to-br from-sman-blue to-blue-900 py-16 md:py-24 px-4 text-center relative overflow-hidden">
+    <div className="flex-grow w-full flex flex-col">
+      {/* Hero Section - flex-grow ensures it fills the space between header and footer */}
+      <div className="flex-grow w-full flex flex-col justify-center items-center bg-gradient-to-br from-sman-blue to-blue-900 py-16 md:py-24 px-4 text-center relative overflow-hidden">
         {/* Abstract shapes for background */}
         <div className="absolute top-0 left-0 w-64 h-64 bg-white/5 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl"></div>
         <div className="absolute bottom-0 right-0 w-96 h-96 bg-sman-red/20 rounded-full translate-x-1/3 translate-y-1/3 blur-3xl"></div>
 
-        <div className="relative z-10 max-w-4xl mx-auto">
+        <div className="relative z-10 max-w-4xl mx-auto w-full">
           <h1 className="text-3xl md:text-5xl font-serif font-bold text-white mb-6 leading-tight lining-nums">
             Pengumuman Kelulusan <br/>
             <span className="text-sman-gold">Tahun Pelajaran {settings.schoolYear}</span>
@@ -119,32 +136,33 @@ const Home: React.FC = () => {
         </div>
       </div>
 
-      {/* Info Section */}
-      <div className="container mx-auto px-4 py-16">
-        <div className="grid md:grid-cols-3 gap-8">
-           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 text-center">
-              <div className="w-12 h-12 bg-blue-50 text-sman-blue rounded-full flex items-center justify-center mx-auto mb-4">
-                <Search className="w-6 h-6" />
+      {/* Centered Popup Notification */}
+      {showPopup && (
+        <>
+          {/* Optional: Semi-transparent backdrop to focus attention */}
+          <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px]" onClick={() => setShowPopup(false)}></div>
+          
+          <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 w-[90%] max-w-md bg-white rounded-2xl shadow-2xl p-6 border-t-4 border-sman-blue animate-fade-in-up">
+            <button 
+              onClick={() => setShowPopup(false)}
+              className="absolute top-3 right-3 text-gray-400 hover:text-red-500 transition-colors bg-gray-50 hover:bg-red-50 rounded-full p-1.5 focus:outline-none"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="bg-blue-50 text-sman-blue p-4 rounded-full h-16 w-16 flex items-center justify-center flex-shrink-0 shadow-sm">
+                <Info className="w-8 h-8" />
               </div>
-              <h3 className="font-bold text-lg mb-2">1. Masukkan Data</h3>
-              <p className="text-gray-600 text-sm">Gunakan Nomor Induk Siswa Nasional (NISN) atau Nomor Peserta Ujian yang valid.</p>
-           </div>
-           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 text-center">
-              <div className="w-12 h-12 bg-blue-50 text-sman-blue rounded-full flex items-center justify-center mx-auto mb-4">
-                <AlertCircle className="w-6 h-6" />
+              <div>
+                <h4 className="font-bold text-gray-900 text-xl mb-2">Informasi</h4>
+                <p className="text-gray-600 leading-relaxed">
+                  {settings.popupText || "Gunakan NISN atau Nomor Peserta Ujian yang valid untuk mengecek status kelulusan Anda."}
+                </p>
               </div>
-              <h3 className="font-bold text-lg mb-2">2. Lihat Status</h3>
-              <p className="text-gray-600 text-sm">Sistem akan menampilkan identitas siswa beserta status kelulusan (LULUS/TIDAK).</p>
-           </div>
-           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 text-center">
-              <div className="w-12 h-12 bg-blue-50 text-sman-blue rounded-full flex items-center justify-center mx-auto mb-4">
-                <Printer className="w-6 h-6" />
-              </div>
-              <h3 className="font-bold text-lg mb-2">3. Cetak SKL</h3>
-              <p className="text-gray-600 text-sm">Jika dinyatakan lulus, Anda dapat mencetak Surat Keterangan Lulus (SKL) Sementara.</p>
-           </div>
-        </div>
-      </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
