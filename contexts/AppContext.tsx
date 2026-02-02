@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Student, AnnouncementSettings } from '../types';
 import { INITIAL_SETTINGS } from '../constants';
 import { auth, db, isFirebaseConfigured } from '../services/firebase';
@@ -51,8 +51,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
+    let authInitialized = false;
+    let settingsInitialized = false;
+
+    const checkLoading = () => {
+      if (authInitialized && settingsInitialized) {
+        setLoading(false);
+      }
+    };
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      if (!authInitialized) {
+        authInitialized = true;
+        checkLoading();
+      }
     });
 
     const fetchSettings = async () => {
@@ -68,7 +81,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch (error) {
         console.error("Error fetching settings:", error);
       } finally {
-        setLoading(false);
+        settingsInitialized = true;
+        checkLoading();
       }
     };
 
@@ -76,7 +90,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => unsubscribe();
   }, []);
 
-  const updateSettings = async (newSettings: AnnouncementSettings) => {
+  const updateSettings = useCallback(async (newSettings: AnnouncementSettings) => {
     setSettingsState(newSettings);
     if (!isFirebaseConfigured) return;
     
@@ -86,17 +100,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error("Error saving settings:", e);
       throw e;
     }
-  };
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     if (!isFirebaseConfigured) {
       setUser(null);
       return;
     }
     await signOut(auth);
-  };
+  }, []);
 
-  const searchStudent = async (queryStr: string): Promise<Student | null> => {
+  const searchStudent = useCallback(async (queryStr: string): Promise<Student | null> => {
     // Always check for dummy data first to ensure it's accessible for testing
     // regardless of Firebase configuration status
     if (queryStr === '1234567890' || queryStr === '24-001-001') {
@@ -128,9 +142,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     return null;
-  };
+  }, []);
 
-  const getStudentById = async (id: string): Promise<Student | null> => {
+  const getStudentById = useCallback(async (id: string): Promise<Student | null> => {
     // Ensure the result page works for the dummy student
     if (id === 'demo-1') {
       return FALLBACK_STUDENT;
@@ -151,9 +165,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error(e);
       return null;
     }
-  }
+  }, []);
 
-  const getAllStudents = async (): Promise<Student[]> => {
+  const getAllStudents = useCallback(async (): Promise<Student[]> => {
     if (!isFirebaseConfigured) {
       return [FALLBACK_STUDENT];
     }
@@ -165,9 +179,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error("Error fetching all students:", e);
       return [];
     }
-  };
+  }, []);
 
-  const importStudents = async (newStudents: Student[]) => {
+  const importStudents = useCallback(async (newStudents: Student[]) => {
     if (!isFirebaseConfigured) {
       alert("Mode Demo: Data tidak disimpan ke database.");
       return;
@@ -179,7 +193,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       batch.set(docRef, student);
     });
     await batch.commit();
-  };
+  }, []);
 
   return (
     <AppContext.Provider value={{ 
